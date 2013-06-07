@@ -1,0 +1,718 @@
+# (eingerueckt = falsch)
+
+	trS.list <- fromJSON(paste(readLines("D:\\TU\\dipl\\c3po-sql\\TrainingSetFuzzy.txt")))
+
+# copy file to working directory, so R can load it
+getwd()
+# [1] "C:/Users/Schind/Documents"
+library(plyr)
+inputFile <- "TrainingSetFuzzy.txt";
+
+
+	con <- file(inputFile)
+	open(con)
+	trS.list <- list();
+	current.line <- 1;
+	while (length(line <- readLines(inputFile, n = 1, warn = FALSE)) > 0) {
+	 trS.list[[current.line]] <- fromJSON(line);
+	 current.line <- current.line + 1;
+	} 
+#-------------------------
+# create data frame with release years
+formats <- c("application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/xhtml+xml", "application/xhtml+xml", "image/png", "image/png", "image/png", "text/html", "text/html", "text/html", "text/html")
+versions <- c("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1a", "1a:2003", "1b", "1", "2", "3", "4", "5", "6", "7", "1.0", "1.1", "1.0", "1.1", "1.2", "2.0", "3.2", "4.0", "4.01")
+years <- c(1993, 1996, 1996, 2000, 2001, 2003, 2004, 2006, 2005, 2003, 2005, 1996, 1997, 1998, 1999, 2000, 2002, 2003, 2000, 2001, 1996, 1998, 1999, 1995, 1997, 1998, 1999)
+releaseYears <- data.frame(formats, versions, years)
+names(releaseYears) <- (list("Mediatype", "Version", "rYear"))
+#-------------------------
+#-------------------------
+# create simple data frame to extend all graphs to 19 years
+xYears <- c(0:18)
+#-------------------------
+
+#----------------------------
+# open file and read values to dataframe
+inputFile <- "TrainingSetFuzzy.txt";
+options(stringsAsFactors = FALSE)
+library("rjson")
+con <- file(inputFile, 'r')
+trS <- data.frame(Mediatype=character(), Version=character(), Collection=character(), Probability=numeric(), stringsAsFactors=FALSE)
+Colnames <- names(trS)
+while (length(input <- readLines(con, n=1)) > 0)	{
+	jsVal<-fromJSON(input)	
+	trS <- rbind(trS, list(as.character(jsVal$`_id`$mediatype), as.character(jsVal$`_id`$version), as.character(jsVal$`_id`$coll), jsVal$value$probability))
+}
+names(trS) <- Colnames
+
+# eventually open and read test set
+inputFile <- "TestSetFuzzy.txt";
+options(stringsAsFactors = FALSE)
+library("rjson")
+con <- file(inputFile, 'r')
+testS <- data.frame(Mediatype=character(), Version=character(), Collection=character(), Probability=numeric(), stringsAsFactors=FALSE)
+Colnames <- names(testS)
+while (length(input <- readLines(con, n=1)) > 0)	{
+	jsVal<-fromJSON(input)	
+	testS <- rbind(testS, list(as.character(jsVal$`_id`$mediatype), as.character(jsVal$`_id`$version), as.character(jsVal$`_id`$coll), jsVal$value$probability))
+}
+names(testS) <- Colnames
+#end open files
+#----------------------
+
+#-------------------------
+# scatterplot figure 4.1 - scatterplot of version usage over all crawled years
+trScat <- subset(trS, grepl("html", Mediatype) | grepl("pdf", Mediatype) | grepl("image", Mediatype) | grepl("flash", Mediatype))
+trScat <- transform(trScat, TotProbability = ave(Probability, Mediatype, Collection, FUN = sum))
+trScat <- transform(trScat, percentage = 100 * Probability/TotProbability)
+trScat <- transform(trScat, year = as.numeric(substring(Collection, 3)))
+ggplot(trScat, aes(x=trScat$year, y=trScat$percentage)) + geom_point(size = 3) + ylab("Percentage of file format") + xlab("Crawled year") + scale_x_continuous(breaks = c(2005,2006,2007,2008,2009,2010,2011)) + scale_shape_manual(name="Format Version", values=c(2,4,16))
+#-------------------------
+
+#-------------------------
+# filter by mediatype pdf
+
+trSpdf <- trS[trS$Mediatype == 'application/pdf',]
+
+# sometimes, pdf 1.0 is referred to as 1 in the c3po file - aggregate them
+temp <- subset(trSpdf, Version == "1.0" | Version == "1" | Version == "1,0")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "1.0"
+# remove files from original data frame
+trSpdf <- subset(trSpdf, Version != "1.0" & Version != "1" & Version != "1,0")
+# add temp data frame back to original data frame
+trSpdf <- merge(trSpdf, tempAgg, all=TRUE)
+
+# --- 
+# evtl
+testSpdf <- testS[testS$Mediatype == 'application/pdf',]
+
+# sometimes, pdf 1.0 is referred to as 1 in the c3po file - aggregate them
+temp <- subset(testSpdf, Version == "1.0" | Version == "1" | Version == "1,0")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "1.0"
+# remove files from original data frame
+testSpdf <- subset(testSpdf, Version != "1.0" & Version != "1" & Version != "1,0")
+# add temp data frame back to original data frame
+testSpdf <- merge(testSpdf, tempAgg, all=TRUE)
+# evtl end
+# ---
+
+	aggregate(trSpdf[,4],list(trSpdf[,3]),mean) 
+	
+foundTypes <- merge(trSpdf, testSpdf, all=TRUE)
+
+# add 0.0 for years, that dont exist
+vals <- expand.grid(Mediatype = unique(foundTypes$Mediatype),
+                    Version = unique(foundTypes$Version),
+                    Collection = unique(foundTypes$Collection))
+
+trSpdf <- merge(vals,trSpdf,all = TRUE)
+trSpdf[is.na(trSpdf)] <- 0
+
+# remove unidentified
+trSpdf <- subset(trSpdf, Version != "-1")
+
+#version1
+	ddply(trSpdf, .(Collection), transform, perc = Probability/sum(Probability)) 
+#version2
+trSpdf <- transform(trSpdf, TotProbability = ave(Probability, Mediatype, Collection, FUN = sum))
+trSpdf <- transform(trSpdf, percentage = 100 * Probability/TotProbability)
+trSpdf <- transform(trSpdf, year = as.numeric(substring(Collection, 3)))
+trSpdf <- merge(trSpdf, releaseYears)
+trSpdf <- transform(trSpdf, ysr = year - rYear)
+
+# remove negative release years
+trSpdf <- subset(trSpdf, ysr >= 0)
+
+#---------------------------
+# (possibly) create test set
+
+# add 0.0 for years, that dont exist
+vals <- expand.grid(Mediatype = unique(foundTypes$Mediatype),
+                    Version = unique(foundTypes$Version),
+                    Collection = unique(foundTypes$Collection))
+testSpdf <- merge(vals,testSpdf,all = TRUE)
+testSpdf[is.na(testSpdf)] <- 0
+
+# remove unidentified
+testSpdf <- subset(testSpdf, Version != "-1")
+
+testSpdf <- transform(testSpdf, TotProbability = ave(Probability, Mediatype, Collection, FUN = sum))
+testSpdf <- transform(testSpdf, percentage = 100 * Probability/TotProbability)
+testSpdf <- transform(testSpdf, year = as.numeric(substring(Collection, 3)))
+testSpdf <- merge(testSpdf, releaseYears)
+testSpdf <- transform(testSpdf, ysr = year - rYear)
+
+# remove negative release years
+testSpdf <- subset(testSpdf, ysr >= 0)
+
+# end create test set
+#---------------------------
+
+#---------------------------
+# compute chisq values and remove files with significant differenc betwen training and test set
+# prop.test(x=c(Yes trS, Yes teS), n=c(Sample size trS, Sample size teS), conf.level=.99, correct=F) - correct=continuity correction?
+# zb prop.test(x=c(101.5,59), n=c(1811,939), conf.level=.99, correct=F)
+
+# loop through training set
+# compute prop.test
+f <- function (trrow, testset){
+	# load corresponding row from test set: (Mediatype, Version, Collection) equal
+	correspondingRow <- testset[testset$Mediatype == trrow$Mediatype & as.character(testset$Version) == as.character(trrow$Version) & testset$Collection == trrow$Collection, ]
+	testval <- prop.test(x=c(trrow$Probability,correspondingRow$Probability), n=c(trrow$TotProbability,correspondingRow$TotProbability), conf.level=.99, correct=F)
+	
+	return (testval$statistic)
+}
+
+xvalues <- data.frame(Mediatype=character(), Version=character(), Collection=character(), Xval=numeric(), stringsAsFactors=FALSE)
+Colnames <- names(xvalues)
+for (i in 1:nrow(trSpdf)){
+	trSrow <- trSpdf[i, ]
+	xvalues <- rbind(xvalues, list(as.character(trSrow$Mediatype), as.character(trSrow$Version), as.character(trSrow$Collection), as.numeric(f(trSrow, testSpdf))))
+}
+names(xvalues) <- Colnames
+### test for NaN values that lead to warnings
+### pdf 1.7 2009
+#r1 <- trSpdf[trSpdf$Mediatype == "application/pdf" & as.character(trSpdf$Version) == as.character("1.7") & trSpdf$Collection == "dk2009", ]
+#r2 <- testSpdf[testSpdf$Mediatype == "application/pdf" & as.character(testSpdf$Version) == as.character("1.7") & testSpdf$Collection == "dk2009", ]
+#prop.test(x=c(r1$Probability,r2$Probability), n=c(r1$TotProbability,r2$TotProbability), conf.level=.99, correct=F)
+### NaN occurs, if both have Probability 0 -> no problem -> change to 0.0
+###
+
+xvalues[is.na(xvalues)] <- 0.0
+# remove values from training set with statistically siginificant derivations (x^2 > 6.64)
+trSpdf <- merge(trSpdf, xvalues)
+trSpdf <- subset(trSpdf, Xval <= 6.64)
+# end compute chisq values
+#---------------------------
+
+# compute average percentages over ysr (years since release)
+ysrpdf <- ddply( trSpdf, .(ysr), function(x) mean(x$percentage) )
+# extend to 19 years
+vals <- expand.grid(ysr = unique(xYears))
+ysrpdf <- merge(vals,ysrpdf,all = TRUE)
+ysrpdf[is.na(ysrpdf)] <- 0
+
+# create plot
+pdfplot <- ggplot(ysrpdf, aes(x=ysrpdf$ysr, y=ysrpdf$V1)) + stat_smooth(method="lm", formula = "ysrpdf$V1 ~ poly(ysrpdf$ysr, 5, raw=TRUE)", n=19, level=0.9) + geom_point(shape=19) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20))
+
+# end filter by mediatype pdf
+# ----------------------------
+
+
+#-------------------------
+# filter by mediatype html
+
+# open file and read values to dataframe
+inputFile <- "newsetTrainingAllMediaFuzzy.txt";
+options(stringsAsFactors = FALSE)
+library("rjson")
+con <- file(inputFile, 'r')
+trSnewset <- data.frame(Mediatype=character(), Version=character(), Collection=character(), Probability=numeric(), stringsAsFactors=FALSE)
+Colnames <- names(trSnewset)
+while (length(input <- readLines(con, n=1)) > 0)	{
+	jsVal<-fromJSON(input)	
+	trSnewset <- rbind(trSnewset, list(as.character(jsVal$`_id`$mediatype), as.character(jsVal$`_id`$version), as.character(jsVal$`_id`$coll), jsVal$value$probability))
+}
+names(trSnewset) <- Colnames
+
+# eventually open and read test set
+inputFile <- "newsetTestAllMediaFuzzy.txt";
+options(stringsAsFactors = FALSE)
+library("rjson")
+con <- file(inputFile, 'r')
+testSnewset <- data.frame(Mediatype=character(), Version=character(), Collection=character(), Probability=numeric(), stringsAsFactors=FALSE)
+Colnames <- names(testSnewset)
+while (length(input <- readLines(con, n=1)) > 0)	{
+	jsVal<-fromJSON(input)	
+	testSnewset <- rbind(testSnewset, list(as.character(jsVal$`_id`$mediatype), as.character(jsVal$`_id`$version), as.character(jsVal$`_id`$coll), jsVal$value$probability))
+}
+names(testSnewset) <- Colnames
+
+trShtml <- subset(trSnewset, trSnewset$Mediatype == "text/html" | trSnewset$Mediatype == "application/xhtml+xml")
+
+#plot(trShtml$year, trShtml$percentage,ylim=range(0,100),xlab="Year", ylab="Percentage of file format")
+
+# aggregate common types (example version 4.0)
+temp <- subset(trShtml, Version == "4.0" | Version == "4" | Version == "4,0" | Version == "4.00" | Version == "4." | Version == "HTML 4.0")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "4.0"
+# remove files from original data frame
+trShtml <- subset(trShtml, Version != "4.0" & Version != "4" & Version != "4,0" & Version != "4.00" & Version != "4." & Version != "HTML 4.0")
+# add temp data frame back to original data frame
+trShtml <- merge(trShtml, tempAgg, all=TRUE)
+
+# aggregate common types (html 4.01)
+temp <- subset(trShtml, Version == "4.01" | Version == "4.1" | Version == "HTML 4.01")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "4.01"
+# remove files from original data frame
+trShtml <- subset(trShtml, Version != "4.01" & Version != "4.1" & Version != "HTML 4.01")
+# add temp data frame back to original data frame
+trShtml <- merge(trShtml, tempAgg, all=TRUE)
+
+#aggregate common types (html 3.2)
+temp <- subset(trShtml, Version == "3.2" | Version == "HTML 3.2")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "3.2"
+# remove files from original data frame
+trShtml <- subset(trShtml, Version != "3.2" & Version != "HTML 3.2")
+# add temp data frame back to original data frame
+trShtml <- merge(trShtml, tempAgg, all=TRUE)
+
+# try to remove invalid types - set them to Version -1
+temp <- subset(trShtml, Version != "1.0" & Version != "1.1" & Version != "2.0" & Version != "3.2" & Version != "4.0" & Version != "4.01")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "-1"
+# remove files from original data frame
+trShtml <- subset(trShtml, Version == "1.0" | Version == "1.1" | Version == "2.0" | Version == "3.2" | Version == "4.0" | Version == "4.01")
+# add temp data frame back to original data frame
+trShtml <- merge(trShtml, tempAgg, all=TRUE)
+
+# expand to all years
+vals <- expand.grid(Mediatype = unique(trShtml$Mediatype),
+                    Version = unique(trShtml$Version),
+                    Collection = unique(trShtml$Collection))
+
+trShtml <- merge(vals,trShtml,all = TRUE)
+trShtml[is.na(trShtml)] <- 0
+
+
+# change html 1.0 and 1.1 to xhtml 1.0 and 1.1
+temp <- subset(trShtml, Version == "1.0" | Version == "1.1")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Version=temp$Version,Collection=temp$Collection),FUN=sum)
+tempAgg$Mediatype = "application/xhtml+xml"
+# remove files from original data frame
+trShtml <- subset(trShtml, Version != "1.0" & Version != "1.1")
+# add temp data frame back to original data frame
+trShtml <- merge(trShtml, tempAgg, all=TRUE)
+
+# remove unidentified
+trShtml <- subset(trShtml, Version != "-1")
+
+# create new columns for percentages
+# no mediatype here, as two different exist (text/html and application/xhtml+xml)
+trShtml <- transform(trShtml, TotProbability = ave(Probability, Collection, FUN = sum))
+trShtml <- transform(trShtml, percentage = 100 * Probability/TotProbability)
+trShtml <- transform(trShtml, year = as.numeric(substring(Collection, 3)))
+trShtml <- merge(trShtml, releaseYears)
+trShtml <- transform(trShtml, ysr = year - rYear)
+
+# remove negative release years
+trShtml <- subset(trShtml, ysr >= 0)
+
+# end create training set
+#------------------------
+# create test set
+testShtml <- subset(testSnewset, testSnewset$Mediatype == "text/html" | testSnewset$Mediatype == "application/xhtml+xml")
+
+# aggregate common types (example version 4.0)
+temp <- subset(testShtml, Version == "4.0" | Version == "4" | Version == "4,0" | Version == "4.00" | Version == "4." | Version == "HTML 4.0")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "4.0"
+# remove files from original data frame
+testShtml <- subset(testShtml, Version != "4.0" & Version != "4" & Version != "4,0" & Version != "4.00" & Version != "4." & Version != "HTML 4.0")
+# add temp data frame back to original data frame
+testShtml <- merge(testShtml, tempAgg, all=TRUE)
+
+# aggregate common types (html 4.01)
+temp <- subset(testShtml, Version == "4.01" | Version == "4.1" | Version == "HTML 4.01")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "4.01"
+# remove files from original data frame
+testShtml <- subset(testShtml, Version != "4.01" & Version != "4.1" & Version != "HTML 4.01")
+# add temp data frame back to original data frame
+testShtml <- merge(testShtml, tempAgg, all=TRUE)
+
+#aggregate common types (html 3.2)
+temp <- subset(testShtml, Version == "3.2" | Version == "HTML 3.2")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "3.2"
+# remove files from original data frame
+testShtml <- subset(testShtml, Version != "3.2" & Version != "HTML 3.2")
+# add temp data frame back to original data frame
+testShtml <- merge(testShtml, tempAgg, all=TRUE)
+
+# try to remove invalid types - set them to Version -1
+temp <- subset(testShtml, Version != "1.0" & Version != "1.1" & Version != "2.0" & Version != "3.2" & Version != "4.0" & Version != "4.01")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "-1"
+# remove files from original data frame
+testShtml <- subset(testShtml, Version == "1.0" | Version == "1.1" | Version == "2.0" | Version == "3.2" | Version == "4.0" | Version == "4.01")
+# add temp data frame back to original data frame
+testShtml <- merge(testShtml, tempAgg, all=TRUE)
+
+# expand to all years
+vals <- expand.grid(Mediatype = unique(testShtml$Mediatype),
+                    Version = unique(testShtml$Version),
+                    Collection = unique(testShtml$Collection))
+
+testShtml <- merge(vals,testShtml,all = TRUE)
+testShtml[is.na(testShtml)] <- 0
+
+
+# change html 1.0 and 1.1 to xhtml 1.0 and 1.1
+temp <- subset(testShtml, Version == "1.0" | Version == "1.1")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Version=temp$Version,Collection=temp$Collection),FUN=sum)
+tempAgg$Mediatype = "application/xhtml+xml"
+# remove files from original data frame
+testShtml <- subset(testShtml, Version != "1.0" & Version != "1.1")
+# add temp data frame back to original data frame
+testShtml <- merge(testShtml, tempAgg, all=TRUE)
+
+# remove unidentified
+testShtml <- subset(testShtml, Version != "-1")
+
+# create new columns for percentages
+# no mediatype here, as two different exist (text/html and application/xhtml+xml)
+testShtml <- transform(testShtml, TotProbability = ave(Probability, Collection, FUN = sum))
+testShtml <- transform(testShtml, percentage = 100 * Probability/TotProbability)
+testShtml <- transform(testShtml, year = as.numeric(substring(Collection, 3)))
+testShtml <- merge(testShtml, releaseYears)
+testShtml <- transform(testShtml, ysr = year - rYear)
+
+# remove negative release years
+testShtml <- subset(testShtml, ysr >= 0)
+# end create test set
+#------------------------
+
+#---------------------------
+# compute chisq values and remove files with significant differenc betwen training and test set
+# prop.test(x=c(Yes trS, Yes teS), n=c(Sample size trS, Sample size teS), conf.level=.99, correct=F) - correct=continuity correction?
+# zb prop.test(x=c(101.5,59), n=c(1811,939), conf.level=.99, correct=F)
+
+# loop through training set
+# compute prop.test
+f <- function (trrow, testset){
+	# load corresponding row from test set: (Mediatype, Version, Collection) equal
+	correspondingRow <- testset[testset$Mediatype == trrow$Mediatype & as.character(testset$Version) == as.character(trrow$Version) & testset$Collection == trrow$Collection, ]
+	testval <- prop.test(x=c(trrow$Probability,correspondingRow$Probability), n=c(trrow$TotProbability,correspondingRow$TotProbability), conf.level=.99, correct=F)
+	
+	return (testval$statistic)
+}
+
+xvalues <- data.frame(Mediatype=character(), Version=character(), Collection=character(), Xval=numeric(), stringsAsFactors=FALSE)
+Colnames <- names(xvalues)
+for (i in 1:nrow(trShtml)){
+	trSrow <- trShtml[i, ]
+	xvalues <- rbind(xvalues, list(as.character(trSrow$Mediatype), as.character(trSrow$Version), as.character(trSrow$Collection), as.numeric(f(trSrow, testShtml))))
+}
+names(xvalues) <- Colnames
+xvalues[is.na(xvalues)] <- 0.0
+# remove values from training set with statistically siginificant derivations (x^2 > 6.64)
+trShtml <- merge(trShtml, xvalues)
+trShtml <- subset(trShtml, Xval <= 6.64)
+# end compute chisq values
+#---------------------------
+
+# compute average percentages over ysr (years since release)
+ysrhtml <- ddply( trShtml, .(ysr), function(x) mean(x$percentage) )
+# extend to 19 years
+vals <- expand.grid(ysr = unique(xYears))
+ysrhtml <- merge(vals,ysrhtml,all = TRUE)
+ysrhtml[is.na(ysrhtml)] <- 0
+
+# create plot
+htmlplot <- ggplot(ysrhtml, aes(x=ysrhtml$ysr, y=ysrhtml$V1)) + stat_smooth(method="lm", formula = "ysrhtml$V1 ~ poly(ysrhtml$ysr, 4, raw=TRUE)", n=19, level=0.9) + geom_point(shape=19) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20))
+
+# end filter by mediatype html
+# ------------------------
+
+#-------------------------
+# filter by mediatype flash (application/x-shockwave-flash)
+
+trSflash <- trS[trS$Mediatype == 'application/x-shockwave-flash',]
+# possibly
+testSflash <- testS[testS$Mediatype == 'application/x-shockwave-flash',]
+
+foundTypes <- merge(trSflash, testSflash, all=TRUE)
+
+# add 0.0 for years, that dont exist
+vals <- expand.grid(Mediatype = unique(foundTypes$Mediatype),
+                    Version = unique(foundTypes$Version),
+                    Collection = unique(foundTypes$Collection))
+trSflash <- merge(vals,trSflash,all = TRUE)
+trSflash[is.na(trSflash)] <- 0
+
+# remove unidentified
+trSflash <- subset(trSflash, Version != "-1")
+
+trSflash <- transform(trSflash, TotProbability = ave(Probability, Mediatype, Collection, FUN = sum))
+trSflash <- transform(trSflash, percentage = 100 * Probability/TotProbability)
+trSflash <- transform(trSflash, year = as.numeric(substring(Collection, 3)))
+trSflash <- merge(trSflash, releaseYears)
+trSflash <- transform(trSflash, ysr = year - rYear)
+
+# remove negative release years
+trSflash <- subset(trSflash, ysr >= 0)
+
+#---------------------------
+# (possibly) create test set
+
+# add 0.0 for years, that dont exist
+vals <- expand.grid(Mediatype = unique(foundTypes$Mediatype),
+                    Version = unique(foundTypes$Version),
+                    Collection = unique(foundTypes$Collection))
+testSflash <- merge(vals,testSflash,all = TRUE)
+testSflash[is.na(testSflash)] <- 0
+
+# remove unidentified
+testSflash <- subset(testSflash, Version != "-1")
+
+testSflash <- transform(testSflash, TotProbability = ave(Probability, Mediatype, Collection, FUN = sum))
+testSflash <- transform(testSflash, percentage = 100 * Probability/TotProbability)
+testSflash <- transform(testSflash, year = as.numeric(substring(Collection, 3)))
+testSflash <- merge(testSflash, releaseYears)
+testSflash <- transform(testSflash, ysr = year - rYear)
+
+# remove negative release years
+testSflash <- subset(testSflash, ysr >= 0)
+
+# end create test set
+#---------------------------
+
+#---------------------------
+# compute chisq values and remove files with significant differenc betwen training and test set
+# prop.test(x=c(Yes trS, Yes teS), n=c(Sample size trS, Sample size teS), conf.level=.99, correct=F) - correct=continuity correction?
+# zb prop.test(x=c(101.5,59), n=c(1811,939), conf.level=.99, correct=F)
+
+# loop through training set
+# compute prop.test
+f <- function (trrow, testset){
+	# load corresponding row from test set: (Mediatype, Version, Collection) equal
+	correspondingRow <- testset[testset$Mediatype == trrow$Mediatype & as.character(testset$Version) == as.character(trrow$Version) & testset$Collection == trrow$Collection, ]
+	testval <- prop.test(x=c(trrow$Probability,correspondingRow$Probability), n=c(trrow$TotProbability,correspondingRow$TotProbability), conf.level=.99, correct=F)
+	
+	return (testval$statistic)
+}
+
+xvalues <- data.frame(Mediatype=character(), Version=character(), Collection=character(), Xval=numeric(), stringsAsFactors=FALSE)
+Colnames <- names(xvalues)
+for (i in 1:nrow(trSflash)){	
+	trSrow <- trSflash[i, ]
+	xvalues <- rbind(xvalues, list(as.character(trSrow$Mediatype), as.character(trSrow$Version), as.character(trSrow$Collection), as.numeric(f(trSrow, testSflash))))
+}
+names(xvalues) <- Colnames
+### test for NaN values that lead to warnings
+### flash 1.7 2009
+#r1 <- trSflash[trSflash$Mediatype == "application/flash" & as.character(trSflash$Version) == as.character("1.7") & trSflash$Collection == "dk2009", ]
+#r2 <- testSflash[testSflash$Mediatype == "application/flash" & as.character(testSflash$Version) == as.character("1.7") & testSflash$Collection == "dk2009", ]
+#prop.test(x=c(r1$Probability,r2$Probability), n=c(r1$TotProbability,r2$TotProbability), conf.level=.99, correct=F)
+### NaN occurs, if both have Probability 0 -> no problem -> change to 0.0
+###
+
+xvalues[is.na(xvalues)] <- 0.0
+# remove values from training set with statistically siginificatn derivations (x^2 > 6.64)
+trSflash <- merge(trSflash, xvalues)
+trSflash <- subset(trSflash, Xval <= 6.64)
+# end compute chisq values
+#---------------------------
+					
+# compute average percentages over ysr (years since release)
+ysrflash <- ddply( trSflash, .(ysr), function(x) mean(x$percentage) )
+# extend to 19 years
+vals <- expand.grid(ysr = unique(xYears))
+ysrflash <- merge(vals,ysrflash,all = TRUE)
+ysrflash[is.na(ysrflash)] <- 0
+
+# create plot
+flashplot <- ggplot(ysrflash, aes(x=ysrflash$ysr, y=ysrflash$V1)) + stat_smooth(method="lm", formula = "ysrflash$V1 ~ poly(ysrflash$ysr, 6, raw=TRUE)", n=19, level=0.9) + geom_point(shape=19) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20))
+
+# end filter by mediatype flash
+#-------------------------
+
+# -----------------
+# display multiplot (4.3: Regression analysis for selected file formats)
+# function multiplot used from http://www.cookbook-r.com/Graphs/Multiple_graphs_on_one_page_%28ggplot2%29/
+pdfplot <- ggplot(ysrpdf, aes(x=ysrpdf$ysr, y=ysrpdf$V1)) + stat_smooth(method="lm", formula = "ysrpdf$V1 ~ poly(ysrpdf$ysr, 5, raw=TRUE)", n=19, level=0.9, se=FALSE) + geom_point(shape=19) + ylab("") + xlab("") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ggtitle("Portable Document Format")# + coord_cartesian(ylim=c(0,30))
+htmlplot <- ggplot(ysrhtml, aes(x=ysrhtml$ysr, y=ysrhtml$V1)) + stat_smooth(method="lm", formula = "ysrhtml$V1 ~ poly(ysrhtml$ysr, 4, raw=TRUE)", n=19, level=0.9, se=FALSE) + geom_point(shape=19) + ylab("% of total existing versions") + xlab("") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ggtitle("Hypertext Markup Language")
+flashplot <- ggplot(ysrflash, aes(x=ysrflash$ysr, y=ysrflash$V1)) + stat_smooth(method="lm", formula = "ysrflash$V1 ~ poly(ysrflash$ysr, 6, raw=TRUE)", n=19, level=0.9, se=FALSE) + geom_point(shape=19) + ylab("") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ggtitle("Flash")
+multiplot(pdfplot, htmlplot, flashplot, cols=1)
+# end multiplot
+# -----------------
+
+# -----------------
+# display average regression of pdf, html and flash
+# 4.4: Regression analysis for the dataset
+ysravg <- ddply(rbind(ysrpdf, ysrhtml, ysrflash), .(ysr), summarize, avgperc = mean(V1))
+avgReg <- ggplot(ysravg, aes(x=ysravg$ysr, y=ysravg$avgperc)) + stat_smooth(method="lm", formula = "ysravg$avgperc ~ poly(ysravg$ysr, 6, raw=TRUE)", n=19, level=0.9) + geom_point(shape=19) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20))
+
+# lm(ysravg$avgperc ~ poly(ysravg$ysr, 6, raw=TRUE))
+# end average regression
+# -----------------
+
+# ---------------
+# display avg confidence interval with other regression lines 
+# 4.5: Confidence interval of the aggregated regression with the regression lines of selected formats
+ggplot(ysravg, aes(x=ysravg$ysr, y=ysravg$avgperc)) + stat_smooth(method="lm", formula = "ysravg$avgperc ~ poly(ysravg$ysr, 6, raw=TRUE)", n=19, level=0.9, lty=0) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) +
+	geom_line(data=ysrpdf, aes(x=ysrpdf$ysr, predict(lm(ysrpdf$V1 ~ poly(ysrpdf$ysr, 5, raw=TRUE))), linetype="PDF"), colour="black", size=1) +
+	geom_line(data=ysrhtml, aes(x=ysrhtml$ysr, predict(lm(ysrhtml$V1 ~ poly(ysrhtml$ysr, 4, raw=TRUE))), linetype="HTML"), colour="black", size=1) +
+	geom_line(data=ysrflash, aes(x=ysrflash$ysr, predict(lm(ysrflash$V1 ~ poly(ysrflash$ysr, 6, raw=TRUE))), linetype="Flash"), colour="black", size=1) +
+	scale_linetype_manual(name="Formats", values = c(1,2,3))
+# end avg confidence interval
+# -----------------
+
+#------------------
+# scatterplot of selected versions (html 3.2, flash 6, pdf 1.6)
+# 4.2: Scatterplot of selected file format/version combinations over all crawled years
+selected <- merge(subset(trShtml, Version == "3.2"), subset(trSflash, Version == "6"), all=TRUE)
+selected <- merge(selected, subset(trSpdf, Version == "1.6"), all=TRUE)
+
+ggplot(selected, aes(x=selected$year, y=selected$percentage)) + geom_point(aes(shape=paste(Mediatype, Version)), size = 3) + ylab("Percentage of file format") + xlab("Crawled year") + scale_x_continuous(breaks = c(2005,2006,2007,2008,2009,2010,2011)) + scale_shape_manual(name="Format Version", values=c(2,4,16))
+# end scatterplot
+#------------------
+
+#------------------
+# textual formats - percentages for latex chart
+# Figure 4.6: Development of textual formats found in the Training Set
+subWord <- subset(trS, Mediatype == "application/msword" | Mediatype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+subWord <- aggregate(list(Probability=subWord$Probability), by=list(Collection=subWord$Collection),FUN=sum)
+subWord$Mediatype = "doc"
+
+subPdf <- subset(trS, Mediatype == "application/pdf")
+subPdf <- aggregate(list(Probability=subPdf$Probability), by=list(Collection=subPdf$Collection),FUN=sum)
+subPdf$Mediatype = "pdf"
+
+subOdf <- subset(trS, Mediatype == "application/vnd.oasis.opendocument.text")
+subOdf <- aggregate(list(Probability=subOdf$Probability), by=list(Collection=subOdf$Collection),FUN=sum)
+subOdf$Mediatype = "odt"
+
+textFormats <- merge(subPdf, subWord, all=TRUE)
+textFormats <- merge(textFormats, subOdf, all=TRUE)
+
+textFormats <- transform(textFormats, YearSum = ave(Probability, Collection, FUN = sum))
+textFormats <- transform(textFormats, percentage = 100 * Probability/YearSum)
+textFormats <- transform(textFormats, year = as.numeric(substring(Collection, 3)))
+
+
+# temp <- data.frame(year=numeric(), pdf=numeric(), doc=numeric(), odf=numeric())
+temp <- data.frame(year=c(2005,2006,2007,2008,2009,2010,2011), doc=c(0.0,0.0,0.0,0.0,0.0,0.0,0.0), pdf=c(0.0,0.0,0.0,0.0,0.0,0.0,0.0), odt=c(0.0,0.0,0.0,0.0,0.0,0.0,0.0))
+
+for (i in 1:nrow(textFormats)){	
+	temp[temp$year == textFormats[i, 'year'], textFormats[i, 'Mediatype']] <- textFormats[i, 'percentage']
+}
+
+write.table(temp, sep=";")
+#------------------
+
+#------------------
+# Figure 4.7: PDF Versions found in the Training Set
+pdfVersions <- trS[trS$Mediatype == 'application/pdf',]
+# sometimes, pdf 1.0 is referred to as 1 in the c3po file - aggregate them
+temp <- subset(pdfVersions, Version == "1.0" | Version == "1" | Version == "1,0")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "1.0"
+# remove files from original data frame
+pdfVersions <- subset(pdfVersions, Version != "1.0" & Version != "1" & Version != "1,0")
+# add temp data frame back to original data frame
+pdfVersions <- merge(pdfVersions, tempAgg, all=TRUE)
+pdfVersions <- aggregate(list(Probability=pdfVersions$Probability), by=list(Collection=pdfVersions$Collection,Version=pdfVersions$Version),FUN=sum)
+pdfVersions <- transform(pdfVersions, YearSum = ave(Probability, Collection, FUN = sum))
+pdfVersions <- transform(pdfVersions, percentage = 100 * Probability/YearSum)
+pdfVersions <- transform(pdfVersions, year = as.numeric(substring(Collection, 3)))
+
+# temp <- data.frame(year=numeric(), pdf=numeric(), doc=numeric(), odf=numeric())
+temp <- data.frame(year=c(2005,2006,2007,2008,2009,2010,2011))
+
+for (i in 1:nrow(pdfVersions)){	
+	temp[temp$year == pdfVersions[i, 'year'], pdfVersions[i, 'Version']] <- pdfVersions[i, 'percentage']
+}
+temp[is.na(temp)] <- 0
+
+write.table(round(temp, 2), sep=";")
+#------------------
+
+#------------------
+# Figures 4.8 and 4.9: HTML Versions found in the dataset, with and without undefined
+
+htmlVersions <- subset(trSnewset, trSnewset$Mediatype == "text/html" | trSnewset$Mediatype == "application/xhtml+xml")
+# aggregate common types (example version 4.0)
+temp <- subset(htmlVersions, Version == "4.0" | Version == "4" | Version == "4,0" | Version == "4.00" | Version == "4." | Version == "HTML 4.0")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "4.0"
+# remove files from original data frame
+htmlVersions <- subset(htmlVersions, Version != "4.0" & Version != "4" & Version != "4,0" & Version != "4.00" & Version != "4." & Version != "HTML 4.0")
+# add temp data frame back to original data frame
+htmlVersions <- merge(htmlVersions, tempAgg, all=TRUE)
+
+# aggregate common types (html 4.01)
+temp <- subset(htmlVersions, Version == "4.01" | Version == "4.1" | Version == "HTML 4.01")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "4.01"
+# remove files from original data frame
+htmlVersions <- subset(htmlVersions, Version != "4.01" & Version != "4.1" & Version != "HTML 4.01")
+# add temp data frame back to original data frame
+htmlVersions <- merge(htmlVersions, tempAgg, all=TRUE)
+
+#aggregate common types (html 3.2)
+temp <- subset(htmlVersions, Version == "3.2" | Version == "HTML 3.2")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "3.2"
+# remove files from original data frame
+htmlVersions <- subset(htmlVersions, Version != "3.2" & Version != "HTML 3.2")
+# add temp data frame back to original data frame
+htmlVersions <- merge(htmlVersions, tempAgg, all=TRUE)
+
+#aggregate common types (html 3.2)
+temp <- subset(htmlVersions, Version == "5" | Version == "5.0")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "5"
+# remove files from original data frame
+htmlVersions <- subset(htmlVersions, Version != "5" & Version != "5.0")
+# add temp data frame back to original data frame
+htmlVersions <- merge(htmlVersions, tempAgg, all=TRUE)
+
+# try to remove invalid types - set them to Version -1
+temp <- subset(htmlVersions, Version != "1.0" & Version != "1.1" & Version != "2.0" & Version != "3.2" & Version != "4.0" & Version != "4.01" & Version != "5")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
+tempAgg$Version = "-1"
+# remove files from original data frame
+htmlVersions <- subset(htmlVersions, Version == "1.0" | Version == "1.1" | Version == "2.0" | Version == "3.2" | Version == "4.0" | Version == "4.01" | Version == "5")
+# add temp data frame back to original data frame
+htmlVersions <- merge(htmlVersions, tempAgg, all=TRUE)
+
+# expand to all years
+vals <- expand.grid(Mediatype = unique(htmlVersions$Mediatype),
+                    Version = unique(htmlVersions$Version),
+                    Collection = unique(htmlVersions$Collection))
+
+htmlVersions <- merge(vals,htmlVersions,all = TRUE)
+htmlVersions[is.na(htmlVersions)] <- 0
+
+# change html 1.0 and 1.1 to xhtml 1.0 and 1.1
+temp <- subset(htmlVersions, Version == "1.0" | Version == "1.1")
+tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Version=temp$Version,Collection=temp$Collection),FUN=sum)
+tempAgg$Mediatype = "application/xhtml+xml"
+# remove files from original data frame
+htmlVersions <- subset(htmlVersions, Version != "1.0" & Version != "1.1")
+# add temp data frame back to original data frame
+htmlVersions <- merge(htmlVersions, tempAgg, all=TRUE)
+
+#---
+# evtl remove unidentified
+htmlVersions <- subset(htmlVersions, Version != "-1")
+#---
+
+# concatenate type and version to create name
+htmlVersions$Name <- paste(htmlVersions$Mediatype, htmlVersions$Version, sep=' ')
+
+htmlVersions <- aggregate(list(Probability=htmlVersions$Probability), by=list(Collection=htmlVersions$Collection,Version=htmlVersions$Name),FUN=sum)
+htmlVersions <- transform(htmlVersions, YearSum = ave(Probability, Collection, FUN = sum))
+htmlVersions <- transform(htmlVersions, percentage = 100 * Probability/YearSum)
+htmlVersions <- transform(htmlVersions, year = as.numeric(substring(Collection, 3)))
+
+# temp <- data.frame(year=numeric(), pdf=numeric(), doc=numeric(), odf=numeric())
+temp <- data.frame(year=c(2005,2006,2007,2008,2009,2010,2011))
+
+for (i in 1:nrow(htmlVersions)){	
+	temp[temp$year == htmlVersions[i, 'year'], htmlVersions[i, 'Version']] <- htmlVersions[i, 'percentage']
+}
+temp[is.na(temp)] <- 0
+
+# remove non existing xhtml versions
+drops <- c("application/xhtml+xml 2.0","application/xhtml+xml 3.2", "application/xhtml+xml 4.0", "application/xhtml+xml 4.01", "application/xhtml+xml 5")
+temp <- temp[,!(names(temp) %in% drops)]
+
+write.table(round(temp, 2), sep=";")
+
+#-----------------------

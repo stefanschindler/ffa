@@ -1,22 +1,11 @@
-# (eingerueckt = falsch)
-
-	trS.list <- fromJSON(paste(readLines("D:\\TU\\dipl\\c3po-sql\\TrainingSetFuzzy.txt")))
-
+library(ggplot2)
+library(plyr)
 # copy file to working directory, so R can load it
 getwd()
 # [1] "C:/Users/Schind/Documents"
 library(plyr)
 inputFile <- "TrainingSetFuzzy.txt";
 
-
-	con <- file(inputFile)
-	open(con)
-	trS.list <- list();
-	current.line <- 1;
-	while (length(line <- readLines(inputFile, n = 1, warn = FALSE)) > 0) {
-	 trS.list[[current.line]] <- fromJSON(line);
-	 current.line <- current.line + 1;
-	} 
 #-------------------------
 # create data frame with release years
 formats <- c("application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/pdf", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/x-shockwave-flash", "application/xhtml+xml", "application/xhtml+xml", "image/png", "image/png", "image/png", "text/html", "text/html", "text/html", "text/html")
@@ -229,7 +218,7 @@ while (length(input <- readLines(con, n=1)) > 0)	{
 }
 names(testSnewset) <- Colnames
 
-trShtml <- subset(trSnewset, trSnewset$Mediatype == "text/html" | trSnewset$Mediatype == "application/xhtml+xml")
+trShtml <- subset(trSnewset, trSnewset$Mediatype == "text/html" | trSnewset$Mediatype == "application/xhtml+xml" | trSnewset$Mediatype == "text/xml")
 
 #plot(trShtml$year, trShtml$percentage,ylim=range(0,100),xlab="Year", ylab="Percentage of file format")
 
@@ -278,7 +267,7 @@ trShtml <- merge(vals,trShtml,all = TRUE)
 trShtml[is.na(trShtml)] <- 0
 
 
-# change html 1.0 and 1.1 to xhtml 1.0 and 1.1
+# change html 1.0 and 1.1 and xml 1.0 and 1.1 to xhtml 1.0 and 1.1
 temp <- subset(trShtml, Version == "1.0" | Version == "1.1")
 tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Version=temp$Version,Collection=temp$Collection),FUN=sum)
 tempAgg$Mediatype = "application/xhtml+xml"
@@ -304,7 +293,7 @@ trShtml <- subset(trShtml, ysr >= 0)
 # end create training set
 #------------------------
 # create test set
-testShtml <- subset(testSnewset, testSnewset$Mediatype == "text/html" | testSnewset$Mediatype == "application/xhtml+xml")
+testShtml <- subset(testSnewset, testSnewset$Mediatype == "text/html" | testSnewset$Mediatype == "application/xhtml+xml" | testSnewset$Mediatype == "text/xml")
 
 # aggregate common types (example version 4.0)
 temp <- subset(testShtml, Version == "4.0" | Version == "4" | Version == "4,0" | Version == "4.00" | Version == "4." | Version == "HTML 4.0")
@@ -526,7 +515,7 @@ flashplot <- ggplot(ysrflash, aes(x=ysrflash$ysr, y=ysrflash$V1)) + stat_smooth(
 # function multiplot used from http://www.cookbook-r.com/Graphs/Multiple_graphs_on_one_page_%28ggplot2%29/
 pdfplot <- ggplot(ysrpdf, aes(x=ysrpdf$ysr, y=ysrpdf$V1)) + stat_smooth(method="lm", formula = "ysrpdf$V1 ~ poly(ysrpdf$ysr, 5, raw=TRUE)", n=19, level=0.9, se=FALSE) + geom_point(shape=19) + ylab("") + xlab("") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ggtitle("Portable Document Format")# + coord_cartesian(ylim=c(0,30))
 htmlplot <- ggplot(ysrhtml, aes(x=ysrhtml$ysr, y=ysrhtml$V1)) + stat_smooth(method="lm", formula = "ysrhtml$V1 ~ poly(ysrhtml$ysr, 4, raw=TRUE)", n=19, level=0.9, se=FALSE) + geom_point(shape=19) + ylab("% of total existing versions") + xlab("") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ggtitle("Hypertext Markup Language")
-flashplot <- ggplot(ysrflash, aes(x=ysrflash$ysr, y=ysrflash$V1)) + stat_smooth(method="lm", formula = "ysrflash$V1 ~ poly(ysrflash$ysr, 6, raw=TRUE)", n=19, level=0.9, se=FALSE) + geom_point(shape=19) + ylab("") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ggtitle("Flash")
+flashplot <- ggplot(ysrflash, aes(x=ysrflash$ysr, y=ysrflash$V1)) + stat_smooth(method="lm", formula = "ysrflash$V1 ~ poly(ysrflash$ysr, 5, raw=TRUE)", n=19, level=0.9, se=FALSE) + geom_point(shape=19) + ylab("") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ggtitle("Flash")
 multiplot(pdfplot, htmlplot, flashplot, cols=1)
 # end multiplot
 # -----------------
@@ -535,7 +524,7 @@ multiplot(pdfplot, htmlplot, flashplot, cols=1)
 # display average regression of pdf, html and flash
 # 4.4: Regression analysis for the dataset
 ysravg <- ddply(rbind(ysrpdf, ysrhtml, ysrflash), .(ysr), summarize, avgperc = mean(V1))
-avgReg <- ggplot(ysravg, aes(x=ysravg$ysr, y=ysravg$avgperc)) + stat_smooth(method="lm", formula = "ysravg$avgperc ~ poly(ysravg$ysr, 6, raw=TRUE)", n=19, level=0.9) + geom_point(shape=19) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20))
+avgReg <- ggplot(ysravg, aes(x=ysravg$ysr, y=ysravg$avgperc)) + stat_smooth(method="lm", formula = "ysravg$avgperc ~ poly(ysravg$ysr, 6, raw=TRUE)", n=19, level=0.9) + geom_point(shape=19) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) + ylim(-10,30)
 
 # lm(ysravg$avgperc ~ poly(ysravg$ysr, 6, raw=TRUE))
 # end average regression
@@ -547,7 +536,7 @@ avgReg <- ggplot(ysravg, aes(x=ysravg$ysr, y=ysravg$avgperc)) + stat_smooth(meth
 ggplot(ysravg, aes(x=ysravg$ysr, y=ysravg$avgperc)) + stat_smooth(method="lm", formula = "ysravg$avgperc ~ poly(ysravg$ysr, 6, raw=TRUE)", n=19, level=0.9, lty=0) + ylab("Percentage of total existing versions") + xlab("Years of Existence") + scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20)) +
 	geom_line(data=ysrpdf, aes(x=ysrpdf$ysr, predict(lm(ysrpdf$V1 ~ poly(ysrpdf$ysr, 5, raw=TRUE))), linetype="PDF"), colour="black", size=1) +
 	geom_line(data=ysrhtml, aes(x=ysrhtml$ysr, predict(lm(ysrhtml$V1 ~ poly(ysrhtml$ysr, 4, raw=TRUE))), linetype="HTML"), colour="black", size=1) +
-	geom_line(data=ysrflash, aes(x=ysrflash$ysr, predict(lm(ysrflash$V1 ~ poly(ysrflash$ysr, 6, raw=TRUE))), linetype="Flash"), colour="black", size=1) +
+	geom_line(data=ysrflash, aes(x=ysrflash$ysr, predict(lm(ysrflash$V1 ~ poly(ysrflash$ysr, 5, raw=TRUE))), linetype="Flash"), colour="black", size=1) +
 	scale_linetype_manual(name="Formats", values = c(1,2,3))
 # end avg confidence interval
 # -----------------
@@ -625,7 +614,7 @@ write.table(round(temp, 2), sep=";")
 #------------------
 # Figures 4.8 and 4.9: HTML Versions found in the dataset, with and without undefined
 
-htmlVersions <- subset(trSnewset, trSnewset$Mediatype == "text/html" | trSnewset$Mediatype == "application/xhtml+xml")
+htmlVersions <- subset(trSnewset, trSnewset$Mediatype == "text/html" | trSnewset$Mediatype == "application/xhtml+xml" | trSnewset$Mediatype == "text/xml")
 # aggregate common types (example version 4.0)
 temp <- subset(htmlVersions, Version == "4.0" | Version == "4" | Version == "4,0" | Version == "4.00" | Version == "4." | Version == "HTML 4.0")
 tempAgg <- aggregate(list(Probability=temp$Probability), by=list(Mediatype=temp$Mediatype,Collection=temp$Collection),FUN=sum)
@@ -687,11 +676,15 @@ tempAgg$Mediatype = "application/xhtml+xml"
 htmlVersions <- subset(htmlVersions, Version != "1.0" & Version != "1.1")
 # add temp data frame back to original data frame
 htmlVersions <- merge(htmlVersions, tempAgg, all=TRUE)
-
+# remove xml 
+htmlVersions <- subset(htmlVersions, Mediatype != "text/xml")
 #---
 # evtl remove unidentified
 htmlVersions <- subset(htmlVersions, Version != "-1")
 #---
+
+# evtl remove version 5
+htmlVersions <- subset(htmlVersions, Version != "5")
 
 # concatenate type and version to create name
 htmlVersions$Name <- paste(htmlVersions$Mediatype, htmlVersions$Version, sep=' ')
@@ -710,7 +703,7 @@ for (i in 1:nrow(htmlVersions)){
 temp[is.na(temp)] <- 0
 
 # remove non existing xhtml versions
-drops <- c("application/xhtml+xml 2.0","application/xhtml+xml 3.2", "application/xhtml+xml 4.0", "application/xhtml+xml 4.01", "application/xhtml+xml 5")
+drops <- c("application/xhtml+xml 2.0","application/xhtml+xml 3.2", "application/xhtml+xml 4.0", "application/xhtml+xml 4.01", "application/xhtml+xml 5", "text/xml 2.0","text/xml 3.2", "text/xml 4.0", "text/xml 4.01", "text/xml 5")
 temp <- temp[,!(names(temp) %in% drops)]
 
 write.table(round(temp, 2), sep=";")
